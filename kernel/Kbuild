@@ -152,8 +152,12 @@ $(warning -- KernelSU: Git not detected, make sure git is installed in your PATH
 endif
 
 
-# Calculate version if git version is available
-ifdef KSU_GIT_VERSION_VALID
+# Allow an explicit override, required when building outside a git checkout
+# (e.g. inside the DDK container) where the commit count is unavailable.
+ifdef KSU_VERSION
+$(info -- KernelSU version (explicit): $(KSU_VERSION))
+ccflags-y += -DKSU_VERSION=$(KSU_VERSION)
+else ifdef KSU_GIT_VERSION_VALID
 # ksu_version: major * 10000 + git version + 200 for historical reasons
 $(eval KSU_VERSION=$(shell expr 30000 + $(KSU_GIT_VERSION)))
 $(info -- KernelSU version: $(KSU_VERSION))

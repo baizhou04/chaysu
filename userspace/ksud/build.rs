@@ -236,6 +236,12 @@ fn main() {
     if env::var("KSU_PACKAGE_NAME").is_err() {
         println!("cargo:rustc-env=KSU_PACKAGE_NAME=me.weishu.kernelsu");
     }
+    // KSU_VERSION lets a build outside a full git checkout pin the same
+    // version code the kernel module reports, so they stay in sync.
+    let code = std::env::var("KSU_VERSION")
+        .ok()
+        .and_then(|v| v.parse::<u32>().ok())
+        .unwrap_or(code);
     println!("cargo:rustc-env=VERSION_CODE={code}");
     println!("cargo:rustc-env=VERSION_NAME={name}");
 

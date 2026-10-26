@@ -605,6 +605,72 @@ curl -L -o /tmp/gradle.zip https://mirrors.cloud.tencent.com/gradle/gradle-9.7.1
 # <hash> 目录名可以用 ./gradlew --version 触发一次后看报错里的路径
 ```
 
+### 模块安装报 "KernelSU version is too old"
+
+日志形如：
+
+```
+- KernelSU version: 16 (kernel) + ... (ksud)
+! KernelSU version is too old!
+```
+
+内核报文是 `16`，说明 KO 是在**没有 git 历史的目录里编译的**。KernelSU 的版本号来自 `git rev-list --count HEAD`，在 DDK 容器内没有 `.git`，于是 Kbuild 回退到兜底的 `KSU_VERSION=16`。
+
+本仓库已修复：`kernel/Kbuild` 支持用 `KSU_VERSION` 环境变量显式覆盖，`userspace/ksud/build.rs` 与 `manager/build.gradle.kts` 也会读取同名变量。编译时统一指定即可：
+
+```bash
+export KSU_VERSION=32680
+```
+
+三处（内核 KO、ksud、管理器 APK）必须用**同一个值**，否则会出现版本不一致的告警。
+
+验证方法：
+
+```bash
+strings kernel/kernelsu.ko | grep "welcome to KernelSU"
+# 应显示你设定的版本号，而不是 16
+```
+
+### 模块安装报 "Unable to apply SELinux patches"
+
+日志形如：
+
+```
+- Checking SELinux patches
+! Unable to apply SELinux patches!
+! Your kernel may not support SELinux patch fully
+```
+
+这**不是**内核不支持 SELinux 打补丁，而是 daemon 路径改名导致的兼容性问题。
+
+原因：本仓库把 daemon 从 `/data/adb/ksud` 改名成了 `/data/adb/kud`，但第三方模块的安装脚本里普遍硬编码了旧路径。以 Zygisk Next 为例，它的 `customize.sh` 里有个 `check_sepolicy` 函数：
+
+```sh
+check_sepolicy() {
+    /data/adb/ksud sepolicy check "$1"
+    return $?
+}
+```
+
+`/data/adb/ksud` 不存在 → 命令执行失败 → 返回非零 → 模块误判为“内核不支持”。
+
+验证规则本身没问题：
+
+```bash
+/data/adb/kud sepolicy apply /path/to/sepolicy.rule
+# 能打印出解析后的每条规则、返回 0，说明打补丁功能正常
+```
+
+本仓库已修复：`ksud install` 执行时会**自动创建兼容链接** `/data/adb/ksud -> /data/adb/kud`，卸载时一并清理（见 [`userspace/ksud/src/utils.rs`](userspace/ksud/src/utils.rs) 的 `link_daemon_legacy_name`）。
+
+如果你用的是较早的版本，手动补一条链接即可：
+
+```bash
+su -c "ln -sf /data/adb/kud /data/adb/ksud"
+```
+
+> 隐蔽性影响：`/data/adb` 目录权限是 `0700`，普通应用无法进入，因此该链接不会暴露给检测方。
+
 ### 改了 daemon 路径后 root 没了
 
 `KSUD_PATH`（内核侧）和 `DAEMON_PATH`（ksud 侧）必须同时改、且**都编进新镜像后再删旧文件**。顺序错了会导致内核找不到 daemon，`su` 直接 Permission denied。

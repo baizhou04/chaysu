@@ -221,6 +221,21 @@ pub fn has_magisk() -> bool {
     which::which("magisk").is_ok()
 }
 
+/// 保持 /data/adb/ksud 指向新名称的 daemon。
+/// 第三方模块的安装脚本（如 Zygisk Next 的 check_sepolicy）直接调用该硬编码路径，
+/// 缺失会导致模块安装失败，因此这里始终维持一个兼容链接。
+fn link_daemon_legacy_name() -> Result<()> {
+    let legacy = PathBuf::from(defs::DAEMON_LEGACY_PATH);
+    let target = PathBuf::from(defs::DAEMON_PATH);
+    if !target.exists() {
+        return Ok(());
+    }
+    let _ = std::fs::remove_file(&legacy);
+    std::os::unix::fs::symlink(&target, &legacy)?;
+    let _ = restorecon::lsetfilecon(defs::DAEMON_LEGACY_PATH, restorecon::KSU_CON);
+    Ok(())
+}
+
 fn link_ksud_to_bin() -> Result<()> {
     let ksu_bin = PathBuf::from(defs::DAEMON_PATH);
     let ksu_bin_link = PathBuf::from(defs::DAEMON_LINK_PATH);
@@ -244,6 +259,7 @@ pub fn install(libadbroot: Option<PathBuf>, data_path: Option<PathBuf>) -> Resul
     assets::ensure_binaries(false).with_context(|| "Failed to extract assets")?;
 
     link_ksud_to_bin()?;
+    link_daemon_legacy_name()?;
 
     if let Some(libadbroot) = libadbroot {
         ensure_dir_exists(defs::LIBRARY_DIR)?;
@@ -284,6 +300,7 @@ pub fn uninstall(package_name: &str) -> Result<()> {
     }
     println!("- Removing directories..");
     std::fs::remove_dir_all(defs::WORKING_DIR).ok();
+    std::fs::remove_file(defs::DAEMON_LEGACY_PATH).ok();
     std::fs::remove_file(defs::DAEMON_PATH).ok();
     std::fs::remove_dir_all(defs::MODULE_DIR).ok();
     std::fs::remove_dir_all(defs::PREINIT_DIR_VOLD).ok();

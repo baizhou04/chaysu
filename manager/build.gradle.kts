@@ -26,6 +26,9 @@ fun getGitDescribe(): String {
 }
 
 fun getVersionCode(): Int {
+    // KSU_VERSION keeps the manager in sync with the kernel module when the
+    // checkout has no usable commit history (e.g. shallow clone or CI).
+    System.getenv("KSU_VERSION")?.toIntOrNull()?.let { return it }
     val commitCount = getGitCommitCount()
     return 30000 + commitCount
 }
